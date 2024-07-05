@@ -41,33 +41,22 @@ async function connectToWhatsApp() {
                     // dapatkan nomor pengirim
                     const senderNumber = messages[0].key.remoteJid;
                     let incomingMessages = messages[0].message.conversation;
-                    incomingMessages = incomingMessages.toLowerCase();
-        
-                    if (messages[0].message.conversation) {
-                        incomingMessages = messages[0].message.conversation;
-                    } else if (messages[0].message.extendedTextMessage) {
-                        incomingMessages = messages[0].message.extendedTextMessage.text;
-                    } else if (messages[0].message.imageMessage) {
-                        incomingMessages = "Image Message";
-                    } // tambahkan else if blok lainnya untuk tipe pesan lain jika diperlukan
         
                     console.log("Nomer Pengirim: ", senderNumber);
                     console.log("Isi Pesan: ", incomingMessages);
         
-                    // Respons berdasarkan isi pesan
-                    let responseMessage = "";
-                    if (incomingMessages.includes("selamat")) {
-                        responseMessage = "Hai...dengan Eko Setiaji Founder MedicTech, bisa kami bantu?";
-                    }
-        
-                    if (responseMessage) {
-                        await sock.sendMessage(senderNumber, { text: responseMessage });
+                    // cek apakah pesan mengandung kata "selamat"
+                    if (incomingMessages.toLowerCase().includes("selamat")) {
+                        // balas pesan
+                        const replyMessage = "Hai..dengan Eko Setiaji, bisa kami bantu";
+                        await sock.sendMessage(senderNumber, { text: replyMessage });
                     }
                 } catch (error) {
                     console.log(error);
                 }
             }
         });
+        
         
         
 
