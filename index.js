@@ -61,8 +61,8 @@ async function connectToWhatsApp() {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-      console.log('Tipe Pesan: ', type);
-      console.log('Pesan: ', messages);
+      console.log('Message Type: ', type);
+      console.log('Messages: ', messages);
 
       if (type === "notify" && messages && messages.length > 0) {
         try {
@@ -77,22 +77,25 @@ async function connectToWhatsApp() {
           }
 
           const isMessageFromGroup = senderNumber.endsWith('@g.us');
+          const isMessageMentionedBot = incomingMessages.includes('@62895600394345'); // Adjust this based on your bot's mention format
 
-          if (!isMessageFromGroup) {
+          if (isMessageFromGroup && isMessageMentionedBot) {
             const result = await generateResponse(incomingMessages);
             await sock.sendMessage(senderNumber, { text: result });
           } else {
-            const isMentioned = message.message.extendedTextMessage && message.message.extendedTextMessage.contextInfo && message.message.extendedTextMessage.contextInfo.mentionedJid;
+            const lowerCaseMessage = incomingMessages.toLowerCase();
+            let replyMessage = '';
 
-            if (isMentioned && message.message.extendedTextMessage.contextInfo.mentionedJid.includes('62895600394345@s.whatsapp.net')) {
-              // Handle specific logic for mentioned messages (optional)
-              if (incomingMessages.toLowerCase().includes("rme")) {
-                const replyMessage = "Investasi RME MedicTech support all layanan tenaga medis, investasi 1x bayar di pakai selamanya...Investasi Rp.2.980.000 dapatkan akses selamanya (Robot Assisten ~ Eko Setiaji)";
-                await sock.sendMessage(senderNumber, { text: replyMessage });
-              } else {
-                const replyMessage = "Hai, (Robot Assisten) siap membantu!";
-                await sock.sendMessage(senderNumber, { text: replyMessage });
-              }
+            if (lowerCaseMessage.includes('eko')) {
+              replyMessage = "Hai...mohon tunggu, ya...'Dari: Robot Assisten Eko'";
+            } else if (lowerCaseMessage.includes('rme')) {
+              replyMessage = "Investasi RME MedicTech support all layanan tenaga medis, investasi 1x bayar di pakai selamanya...Investasi Rp.2.980.000, full fitur: resep otomatis dosis akurat rekomendasi obat lengkap";
+            } else if (lowerCaseMessage.includes('dosis')) {
+              replyMessage = "Informasi Dosis Obat Akurat: https://dosisakurat.vercel.app";
+            }
+
+            if (replyMessage) {
+              await sock.sendMessage(senderNumber, { text: replyMessage });
             }
           }
         } catch (error) {
