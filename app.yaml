@@ -1,0 +1,4 @@
+runtime: nodejs20.11.1
+handlers:
+  - url: /.*
+    script: index.js
