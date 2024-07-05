@@ -36,32 +36,52 @@ async function connectToWhatsApp() {
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             console.log('Tipe Pesan: ', type);
             console.log('Pesan: ', messages);
-            if (type === "notify") {
-                try {
-                    // dapatkan nomor pengirim
-                    const senderNumber = messages[0].key.remoteJid;
-                    let incomingMessages = messages[0].message.conversation;
         
+            if (type === "notify" && messages && messages.length > 0) {
+                try {
+                    const message = messages[0];
+                    const senderNumber = message.key.remoteJid;
+                    let incomingMessages = '';
+
+                    // Cek apakah pesan mengandung 'conversation'
+                    if (message.message && message.message.conversation) {
+                        incomingMessages = message.message.conversation;
+                    } else if (message.message.extendedTextMessage && message.message.extendedTextMessage.text) {
+                        incomingMessages = message.message.extendedTextMessage.text;
+                    }
+
                     console.log("Nomer Pengirim: ", senderNumber);
                     console.log("Isi Pesan: ", incomingMessages);
-        
-                    // cek apakah pesan mengandung kata "selamat"
-                    if (incomingMessages.toLowerCase().includes("selamat")) {
-                        // balas pesan
-                        const replyMessage = "Hai..dengan Eko Setiaji, bisa kami bantu";
-                        await sock.sendMessage(senderNumber, { text: replyMessage });
+
+                    // Cek apakah pesan berasal dari grup
+                    if (senderNumber.endsWith('@g.us')) {
+                        const isMentioned = message.message.extendedTextMessage && message.message.extendedTextMessage.contextInfo && message.message.extendedTextMessage.contextInfo.mentionedJid;
+
+                        // Cek apakah bot disebut dalam pesan
+                        if (isMentioned && message.message.extendedTextMessage.contextInfo.mentionedJid.includes('62895600394345@s.whatsapp.net')) {
+                            if (incomingMessages.toLowerCase().includes("rme")) {
+                                const replyMessage = "Investasi RME MedicTech support all layanan tenaga medis, investasi 1x bayar di pakai selamanya...Investasi Rp.2.980.000 dapatkan akses selamanya (Robot Assisten ~ Eko Setiaji)";
+                                await sock.sendMessage(senderNumber, { text: replyMessage });
+                            } else {
+                                const replyMessage = "Hai, (Robot Assisten ~ Eko Setiaji) siap membantu..., silahkan mention dan beri pertanyaan";
+                                await sock.sendMessage(senderNumber, { text: replyMessage });
+                            }
+                        }
+                    } else {
+                        // Cek apakah pesan pribadi mengandung kata "selamat"
+                        if (incomingMessages.toLowerCase().includes("selamat")) {
+                            const replyMessage = "Hai..dengan Eko Setiaji, bisa kami bantu";
+                            await sock.sendMessage(senderNumber, { text: replyMessage });
+                        }
                     }
                 } catch (error) {
-                    console.log(error);
+                    console.log("Error saat memproses pesan: ", error);
                 }
             }
         });
-        
-        
-        
 
     } catch (err) {
-        console.error('Ada Error: ', err);
+        console.error('Ada Error dalam koneksi: ', err);
     }
 }
 
