@@ -1,7 +1,8 @@
+const axios = require('axios');
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const dotenv = require("dotenv");
+const dotenv = require('dotenv');
 dotenv.config();
 
 const gemini_api_key = process.env.API_KEY || "AIzaSyBGPFXf-uGC4wnbQR4beR43eqhQpq0dqY0";
@@ -29,7 +30,20 @@ async function generateResponse(incomingMessages) {
   }
 }
 
-async function sendMessageAtSpecificTime(sock, number, message, targetDate) {
+const firebaseDatabaseUrl = 'https://chatbot-e4c87-default-rtdb.firebaseio.com';
+
+async function getMessagesFromFirebase() {
+  try {
+    const response = await axios.get(`${firebaseDatabaseUrl}/messages.json`);
+    console.log('Data fetched from Firebase:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching messages from Firebase:', error);
+    return null;
+  }
+}
+
+async function sendMessageAtSpecificTime(sock, targetJid, message, targetDate, messageId) {
   const currentTime = new Date().getTime();
   const targetTime = targetDate.getTime();
   const delay = targetTime - currentTime;
@@ -37,10 +51,11 @@ async function sendMessageAtSpecificTime(sock, number, message, targetDate) {
   if (delay > 0) {
     setTimeout(async () => {
       try {
-        await sock.sendMessage(number, { text: message });
-        console.log(`Pesan terkirim ke ${number} pada ${targetDate}.`);
+        await sock.sendMessage(targetJid, { text: message });
+        console.log(`Pesan teks terkirim ke ${targetJid} pada ${targetDate}.`);
+        await markMessageAsProcessed(messageId);
       } catch (error) {
-        console.error(`Gagal mengirim pesan ke ${number}:`, error);
+        console.error(`Gagal mengirim pesan teks ke ${targetJid}:`, error);
       }
     }, delay);
   } else {
@@ -48,65 +63,49 @@ async function sendMessageAtSpecificTime(sock, number, message, targetDate) {
   }
 }
 
-async function connectToWhatsApp() {
+async function sendImage(sock, targetJid, imageUrl, caption, messageId) {
   try {
-    console.log('Mencoba menghubungkan ke WhatsApp...');
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const imageBuffer = Buffer.from(response.data, 'binary');
+    await sock.sendMessage(targetJid, { image: imageBuffer, caption });
+    console.log(`Gambar terkirim ke ${targetJid}`);
+    await markMessageAsProcessed(messageId);
+  } catch (error) {
+    console.error('Error sending image:', error);
+  }
+}
 
-    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
-
-    const sock = makeWASocket({
-      auth: state,
-      printQRInTerminal: true,
-      defaultQueryTimeoutMs: undefined
+async function markMessageAsProcessed(messageId) {
+  try {
+    await axios.patch(`${firebaseDatabaseUrl}/messages/${messageId}.json`, {
+      processed: true
     });
+    console.log(`Pesan dengan ID ${messageId} telah ditandai sebagai diproses.`);
+  } catch (error) {
+    console.error('Error marking message as processed:', error);
+  }
+}
 
-    sock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect } = update;
-      console.log('Status Koneksi: ', connection);
-      if (lastDisconnect) {
-        console.log('Detail Pemutusan Koneksi: ', lastDisconnect.error);
-      }
-      if (connection === 'close') {
-        const shouldReconnect = lastDisconnect.error instanceof Boom && lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log('Koneksi terputus karena ', lastDisconnect.error, ', hubungkan kembali!', shouldReconnect);
-        if (shouldReconnect) {
-          connectToWhatsApp();
+async function processMessages(sock) {
+  const messagesData = await getMessagesFromFirebase();
+  if (messagesData) {
+    for (const [key, value] of Object.entries(messagesData)) {
+      if (!value.processed) {
+        const targetDate = new Date(value.targetDate);
+        const targetJid = value.targetJid.replace(/['"]+/g, ''); // Remove quotes if any
+        if (value.type === 'text') {
+          const formattedContent = value.content.replace(/\\n/g, '\n'); // Replace \n with actual newlines
+          sendMessageAtSpecificTime(sock, targetJid, formattedContent, targetDate, key);
+        } else if (value.type === 'image') {
+          const formattedCaption = value.caption.replace(/\\n/g, '\n'); // Replace \n with actual newlines
+          await sendImage(sock, targetJid, value.imageUrl, formattedCaption, key);
         }
-      } else if (connection === 'open') {
-        console.log('Koneksi tersambung!');
-
-        // Tentukan tanggal dan waktu pengiriman untuk pesan pertama
-        const targetDate1 = new Date('2024-07-06T01:47:00+07:00'); // Waktu Indonesia, Jakarta
-
-        // Pesan dengan format yang diminta
-        const message1 = `
-          MedicTech :
-          🖥️ Icon Laptop RME 
-          💊 icon obat DosisAkurat.vercel.app
-          
-          Ini adalah pesan otomatis pada tanggal 6 Juli 2024 jam 1:47 AM.
-        `;
-
-        // Kirim pesan otomatis pada waktu yang ditentukan
-        sendMessageAtSpecificTime(sock, '6289633422255@s.whatsapp.net', message1, targetDate1);
-
-        // Tentukan tanggal dan waktu pengiriman untuk pesan kedua ke grup
-        const targetDate2 = new Date('2024-07-06T06:06:00+07:00');     // Waktu Indonesia, Jakarta
-
-        // Pesan untuk grup dengan format yang diminta
-        const message2 = `
-        Tetap semangat! ☕😄 Ingat, meskipun hari ini terasa panjang, 
-        kopi selalu lebih pendek daripada shift kita!
-          
-          Ini adalah pesan otomatis ke grup pada tanggal 6 Juli 2024 jam 06:06:06 AM.
-        `;
-
-        // Kirim pesan otomatis ke grup pada waktu yang ditentukan
-        sendMessageAtSpecificTime(sock, '120363044573094419@g.us', message2, targetDate2);
       }
-    });
+    }
+  }
+}
 
-    //info sock HMBI: '120363163312129637@g.us'
+  //info sock HMBI: '120363163312129637@g.us'
     //info ppni Karawang '120363044573094419@g.us'
     //ICO 1 '120363162183976678@g.us'
     //ICO 2 '120363162768337998@g.us'
@@ -122,7 +121,42 @@ async function connectToWhatsApp() {
     //NW '120363038707327926@g.us'
     //Pertanian Teknologi '120363163875111753@g.us'
     //Early MD '120363048054248610@g.us'
-    
+    //Haris '6285728091945@s.whatsapp.net'
+
+async function connectToWhatsApp() {
+  try {
+    console.log('Mencoba menghubungkan ke WhatsApp...');
+
+    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: true,
+      defaultQueryTimeoutMs: undefined
+    });
+
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect } = update;
+      console.log('Status Koneksi: ', connection);
+      if (lastDisconnect) {
+        console.log('Detail Pemutusan Koneksi: ', lastDisconnect.error);
+      }
+      if (connection === 'close') {
+        const shouldReconnect = lastDisconnect.error instanceof Boom && lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut;
+        console.log('Koneksi terputus karena ', lastDisconnect.error, ', hubungkan kembali!', shouldReconnect);
+        if (shouldReconnect) {
+          connectToWhatsApp();
+        }
+      } else if (connection === 'open') {
+        console.log('Koneksi tersambung!');
+
+        // Mulai polling Firebase setiap 60 detik
+        setInterval(() => {
+          processMessages(sock);
+        }, 60000);
+      }
+    });
+
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
@@ -152,11 +186,11 @@ async function connectToWhatsApp() {
             let replyMessage = '';
 
             if (lowerCaseMessage.includes('eko')) {
-              replyMessage = "Hai...mohon tunggu, ya...'Dari: Robot Assisten Eko'";
+              replyMessage = "Hai...mohon tunggu, ya... 🤖'Dari: Robot Assisten Eko'";
             } else if (lowerCaseMessage.includes('rme')) {
-              replyMessage = "Investasi RME MedicTech support all layanan tenaga medis, investasi 1x bayar di pakai selamanya...Investasi Rp.2.980.000, full fitur: resep otomatis dosis akurat rekomendasi obat lengkap";
+              replyMessage = "Investasi RME MedicTech support all layanan tenaga medis, investasi 1x bayar di pakai selamanya...Investasi Rp.2.980.000, full fitur: resep otomatis dosis akurat rekomendasi obat lengkap 🤖";
             } else if (lowerCaseMessage.includes('dosis')) {
-              replyMessage = "Informasi Dosis Obat Akurat: https://dosisakurat.vercel.app";
+              replyMessage = "Informasi Dosis Obat Akurat: https://dosisakurat.vercel.app 🤖";
             }
 
             if (replyMessage) {
