@@ -86,24 +86,38 @@ async function markMessageAsProcessed(messageId) {
   }
 }
 
+async function sendMessagesToMultipleTargets(sock, targetJids, message, targetDate, messageId) {
+  for (const targetJid of targetJids) {
+    await sendMessageAtSpecificTime(sock, targetJid, message, targetDate, messageId);
+  }
+}
+
 async function processMessages(sock) {
   const messagesData = await getMessagesFromFirebase();
   if (messagesData) {
     for (const [key, value] of Object.entries(messagesData)) {
       if (!value.processed) {
         const targetDate = new Date(value.targetDate);
-        const targetJid = value.targetJid.replace(/['"]+/g, ''); // Remove quotes if any
+        const targetJids = value.targetJid.split(',').map(jid => jid.trim());
+        
         if (value.type === 'text') {
           const formattedContent = value.content.replace(/\\n/g, '\n'); // Replace \n with actual newlines
-          sendMessageAtSpecificTime(sock, targetJid, formattedContent, targetDate, key);
+          await sendMessagesToMultipleTargets(sock, targetJids, formattedContent, targetDate, key);
         } else if (value.type === 'image') {
           const formattedCaption = value.caption.replace(/\\n/g, '\n'); // Replace \n with actual newlines
-          await sendImage(sock, targetJid, value.imageUrl, formattedCaption, key);
+          for (const targetJid of targetJids) {
+            await sendImage(sock, targetJid, value.imageUrl, formattedCaption, key);
+          }
         }
+
+        // Mark message as processed after sending
+        await markMessageAsProcessed(key);
       }
     }
   }
 }
+
+
 
   //info sock HMBI: '120363163312129637@g.us'
     //info ppni Karawang '120363044573094419@g.us'
@@ -122,6 +136,9 @@ async function processMessages(sock) {
     //Pertanian Teknologi '120363163875111753@g.us'
     //Early MD '120363048054248610@g.us'
     //Haris '6285728091945@s.whatsapp.net'
+    //my num '6289633422255@s.whatsapp.net'
+    // Tes Group 120363298485758656@g.us
+    //Push Group 120363314010033024@g.us
 
 async function connectToWhatsApp() {
   try {
